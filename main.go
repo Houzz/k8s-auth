@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -32,12 +33,33 @@ const (
 	exampleAppState = "login"
 )
 
+type cluster struct {
+	Cert   string `json:"certificate-authority-data"`
+	Server string `json:"server"`
+	Name   string `json:"name"`
+}
+
+type config struct {
+	ClientID     string    `json:"client-id"`
+	ClientSecret string    `json:"client-secret"`
+	Issuer       string    `json:"issuer"`
+	Clusters     []cluster `json:"clusters"`
+	Env          string    `json:"env"`
+}
+
+type configList struct {
+	Configs []config `json:"configs"`
+}
+
 type app struct {
-	clientID     string
-	clientSecret string
-	redirectURI  string
-	kubeconfig   string
-	debug        bool
+	config
+	redirectURI string
+	kubeconfig  string
+	debug       bool
+	env         string
+	profile     string
+	store       string
+	key         string
 
 	verifier *oidc.IDTokenVerifier
 	provider *oidc.Provider
@@ -48,6 +70,9 @@ type app struct {
 
 	client       *http.Client
 	shutdownChan chan bool
+
+	clusters map[string]*k8s_api.Cluster
+	contexts map[string]*k8s_api.Context
 }
 
 type claim struct {
@@ -113,18 +138,85 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func cmd() *cobra.Command {
 	var (
-		a         app
-		issuerURL string
-		listen    string
-		tlsCert   string
-		tlsKey    string
-		rootCAs   string
+		a            app
+		listen       string
+		tlsCert      string
+		tlsKey       string
+		rootCAs      string
+		clusterNames []string
 	)
 	c := cobra.Command{
-		Use:   "k8s-auth",
-		Short: "Authenticates users against OIDC and writes the required kubeconfig.",
-		Long:  "",
+		Use:       "k8s-auth",
+		Short:     "Authenticates users against OIDC and writes the required kubeconfig.",
+		Long:      "",
+		ValidArgs: []string{"some", "acceptable", "values"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+
+			cm := NewConfigManager(&Options{a.profile})
+
+			rawConfig, err := cm.get(a.store, a.key)
+
+			if err != nil {
+				return err
+			}
+
+			var cl configList
+			if err := json.Unmarshal(rawConfig, &cl); err != nil {
+				return fmt.Errorf("Failed to parse raw config file")
+			}
+
+			var c config
+			for _, cfg := range cl.Configs {
+				if cfg.Env == a.env {
+					c = cfg
+					break
+				}
+			}
+
+			if c.Env != a.env {
+				return fmt.Errorf("Found no given env %s in config file", a.env)
+			}
+
+			if a.Issuer == "" {
+				a.Issuer = c.Issuer
+			}
+
+			if a.ClientID == "" {
+				a.ClientID = c.ClientID
+			}
+
+			if a.ClientSecret == "" {
+				a.ClientSecret = c.ClientSecret
+			}
+
+			memo := map[string]cluster{}
+
+			for _, cls := range c.Clusters {
+				memo[cls.Name] = cls
+			}
+
+			a.clusters = make(map[string]*k8s_api.Cluster)
+			a.contexts = make(map[string]*k8s_api.Context)
+
+			for _, name := range clusterNames {
+				if conf, ok := memo[name]; ok {
+					finalClusterName := a.env + "-" + name
+					cluster := k8s_api.NewCluster()
+					cluster.Server = conf.Server
+					if cert, err := base64.StdEncoding.DecodeString(conf.Cert); err != nil {
+						return fmt.Errorf("Failed to decode string %s for certificate", conf.Cert)
+					} else {
+						cluster.CertificateAuthorityData = cert
+					}
+					a.clusters[finalClusterName] = cluster
+					context := k8s_api.NewContext()
+					context.Cluster = finalClusterName
+					a.contexts[finalClusterName] = context
+				} else {
+					return fmt.Errorf("Found no cluster %s in config file", name)
+				}
+			}
+
 			u, err := url.Parse(a.redirectURI)
 			if err != nil {
 				return fmt.Errorf("parse redirect-uri: %v", err)
@@ -157,9 +249,9 @@ func cmd() *cobra.Command {
 			}
 
 			ctx := oidc.ClientContext(context.Background(), a.client)
-			provider, err := oidc.NewProvider(ctx, issuerURL)
+			provider, err := oidc.NewProvider(ctx, a.Issuer)
 			if err != nil {
-				return fmt.Errorf("Failed to query provider %q: %v", issuerURL, err)
+				return fmt.Errorf("Failed to query provider %q: %v", a.Issuer, err)
 			}
 
 			var s struct {
@@ -190,7 +282,7 @@ func cmd() *cobra.Command {
 			}
 
 			a.provider = provider
-			a.verifier = provider.Verifier(&oidc.Config{ClientID: a.clientID})
+			a.verifier = provider.Verifier(&oidc.Config{ClientID: a.ClientID})
 			a.shutdownChan = make(chan bool)
 
 			http.HandleFunc("/", a.handleLogin)
@@ -214,16 +306,21 @@ func cmd() *cobra.Command {
 	}
 
 	// Configurable variables
-	c.Flags().StringVar(&a.clientID, "client-id", "kubernetes", "OAuth2 client ID of this application.")
-	c.Flags().StringVar(&a.clientSecret, "client-secret", "c3VwZXJzZWNyZXRzdHJpbmcK", "OAuth2 client secret of this application.")
+	c.Flags().StringVar(&a.ClientID, "client-id", "", "OAuth2 client ID of this application.")
+	c.Flags().StringVar(&a.ClientSecret, "client-secret", "", "OAuth2 client secret of this application.")
 	c.Flags().StringVar(&a.redirectURI, "redirect-uri", "http://127.0.0.1:5555/callback", "Callback URL for OAuth2 responses.")
-	c.Flags().StringVar(&issuerURL, "issuer", "http://127.0.0.1:5556/dex", "URL of the OpenID Connect issuer.")
+	c.Flags().StringVar(&a.Issuer, "issuer", "", "URL of the OpenID Connect issuer.")
 	c.Flags().StringVar(&listen, "listen", "http://127.0.0.1:5555", "HTTP(S) address to listen at.")
 	c.Flags().StringVar(&tlsCert, "tls-cert", "", "X509 cert file to present when serving HTTPS.")
 	c.Flags().StringVar(&tlsKey, "tls-key", "", "Private key for the HTTPS cert.")
 	c.Flags().StringVar(&rootCAs, "issuer-root-ca", "", "Root certificate authorities for the issuer. Defaults to host certs.")
 	c.Flags().BoolVar(&a.debug, "debug", false, "Print all request and responses from the OpenID Connect issuer.")
-	c.Flags().StringVar(&a.kubeconfig, "kubeconfig", "", "Kubeconfig file to configure")
+	c.Flags().StringVar(&a.kubeconfig, "kubeconfig", "", "Kubeconfig file to configure.")
+	c.Flags().StringSliceVar(&clusterNames, "cluster", []string{}, "Cluster(s) to access to, e.g. batch, saas, and main etc.")
+	c.Flags().StringVar(&a.env, "env", "stg", "Enviroment where authentication system is going to be run against. Choose from stg and prod.")
+	c.Flags().StringVar(&a.profile, "profile", "stg", "Profile of AWS credentials to load.")
+	c.Flags().StringVar(&a.store, "store", "", "Storage of the configuration file. In S3, it's the bucket name.")
+	c.Flags().StringVar(&a.key, "key", "", "Key of the configuration file. In S3, it's the object key.")
 	return &c
 }
 
@@ -236,8 +333,8 @@ func main() {
 
 func (a *app) oauth2Config(scopes []string) *oauth2.Config {
 	return &oauth2.Config{
-		ClientID:     a.clientID,
-		ClientSecret: a.clientSecret,
+		ClientID:     a.ClientID,
+		ClientSecret: a.ClientSecret,
 		Endpoint:     a.provider.Endpoint(),
 		Scopes:       scopes,
 		RedirectURL:  a.redirectURI,
@@ -395,6 +492,13 @@ func updateKubeConfig(IDToken string, refreshToken string, claims claim, a *app)
 		return err
 	}
 
+	for k, v := range a.clusters {
+		config.Clusters[k] = v
+	}
+	for k, v := range a.contexts {
+		config.Contexts[k] = v
+	}
+
 	authInfo := k8s_api.NewAuthInfo()
 	if conf, ok := config.AuthInfos[claims.Email]; ok {
 		authInfo = conf
@@ -403,15 +507,21 @@ func updateKubeConfig(IDToken string, refreshToken string, claims claim, a *app)
 	authInfo.AuthProvider = &k8s_api.AuthProviderConfig{
 		Name: "oidc",
 		Config: map[string]string{
-			"client-id":      a.clientID,
-			"client-secret":  a.clientSecret,
+			"client-id":      a.ClientID,
+			"client-secret":  a.ClientSecret,
 			"id-token":       IDToken,
 			"refresh-token":  refreshToken,
 			"idp-issuer-url": claims.Iss,
 		},
 	}
 
-	config.AuthInfos[claims.Email] = authInfo
+	finalUserName := a.env + "-" + claims.Email
+
+	config.AuthInfos[finalUserName] = authInfo
+
+	for _, context := range a.contexts {
+		context.AuthInfo = finalUserName
+	}
 
 	fmt.Printf("Writing config to %s\n", outputFilename)
 	err = k8s_client.WriteToFile(*config, outputFilename)
