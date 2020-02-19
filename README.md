@@ -1,46 +1,77 @@
-# Kubernetes Authentication Example
-This code is provided verbatim as an example of how to connect to an OIDC
-provider and authenticate users before configuring their `kubeconfig`.
+# Kubernetes Authentication
 
-At [Pusher](https://pusher.com), we distribute a copy of this app to our engineers
-which sources all required information from Vault and configures their cluster
-contexts as well.
+Kube-auth helps engineers get a well-done kube config for accessing Kubernetes clusters via Kubectl.
 
-You may also wish to build your own version of this app, sourcing it's
-configuration automatically, to improve your user-experience.
+The workflows are:
+* leads engineers to authentication process for credentials
+* sources clusters information from AWS S3
+* assembles contexts with cluster and user information. 
+
+> :warning: **Please note :** When an engineer has Google Groups updated, Kube-auth need to be rerun to get user information up-to-date, otherwise the desired permission may not be delivered.  
 
 ## Attribution
-This project started life as the [Dex example app](https://github.com/coreos/dex/tree/master/cmd/example-app).
+This project is customized based on [k8s-auth-example](https://github.com/pusher/k8s-auth-example).
+
+## Prerequisites
+
+* Make sure the profile staging exists in your aws credential file (~/.aws/credentials), as
+
+  ```
+  [staging]
+  aws_access_key_id = <YOUR_STAGING_AWS_ACCESS_KEY_ID>
+  aws_secret_access_key = <YOUR_STAGING_AWS_SECRET_ACCESS_KEY>
+  ```
+  and in aws config file (~/.aws/config), as
+
+  ```
+  [staging]
+  output = json
+  region = us-west-2
+  ```
+  Read this [wiki](https://cr.houzz.net/w/dev-introduction/aws-setup/) if you don't know value of above variables.
+
+* Be clear of functionality and environment of clusters you need access to. Please refer to [cluster chart](https://cr.houzz.net/w/be/kubernetes/use_kubernetes/) in *Kubernetes At Houzz* section .
 
 ## Usage
-You will need to configure an OIDC application with your Identity Provider.
 
-The redirect URI should be `http://127.0.0.1:5555/callback` and you will need to
-make a note of the issuer URL and the client secret that you set/are given.
-
-We use Dex so I've included an example Dex config snippet below:
 ```
-staticClients:
-- id: kubernetes
-  redirectURIs:
-  - 'http://127.0.0.1:5555/callback'
-  name: 'Kubernetes API'
-  secret: c3VwZXJzZWNyZXRzdHJpbmcK
+kube-auth --env <stg|prod> --cluster <batch|saas|main|mgmt|test> 
 ```
 
-With this configuration, and a Dex instance running at https://auth.exmaple.com/dex,
-the following command will initiate the login flow:
+Here are some common scenarios:
+
+Example 1: A developer who has workloads, like RQ worker, running in the batch cluster of both staging and production. 
 ```
-./k8s-auth-example --client-secret c3VwZXJzZWNyZXRzdHJpbmcK --client-id kubernetes --issuer https://auth.exmaple.com/dex
+kube-auth --env stg --cluster batch
+kube-auth --env prod --cluster batch
 ```
+
+Example 2: A developer who is working on Kafka consumers running in the batch cluster and CRM running in the saas cluster. 
+```
+kube-auth --env stg --cluster batch --cluster saas
+kube-auth --env prod --cluster batch --cluster saas
+```
+
+Example 3: A k8s admin who needs to manage all clusters. Run 
+```
+kube-auth --env stg --cluster all
+kube-auth --env prod --cluster all
+```
+
+Example 4: An intern who only needs to experiment in the staging batch cluster.
+```
+kube-auth --env stg --cluster batch.
+```
+
+> :information_source: **Tips :** Run `kube-auth --help` for usage information of the app if you are not sure how to use the app.
 
 ## Building
 The application is written in Go using [`dep`](https://github.com/golang/dep)
 as the package manager. The following will get you your first build:
 
 ```
-go get git@github.com/pusher/k8s-auth-example
-cd $GOPATH/src/github.com/pusher/k8s-auth-example
+go get git@github.com/Houzz/k8s-auth
+cd $GOPATH/src/github.com/Houzz/k8s-auth
 dep ensure
 go build -o k8s-auth
 ```
