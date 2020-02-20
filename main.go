@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -198,7 +199,23 @@ func cmd() *cobra.Command {
 			a.clusters = make(map[string]*k8s_api.Cluster)
 			a.contexts = make(map[string]*k8s_api.Context)
 
+			needAll := false
 			for _, name := range clusterNames {
+				if strings.ToLower(name) == "all" {
+					needAll = true
+					break
+				}
+			}
+
+			if needAll {
+				clusterNames = []string{}
+				for name := range memo {
+					clusterNames = append(clusterNames, name)
+				}
+			}
+
+			for _, cn := range clusterNames {
+				name := strings.ToLower(cn)
 				if conf, ok := memo[name]; ok {
 					finalClusterName := a.env + "-" + name
 					cluster := k8s_api.NewCluster()
@@ -316,9 +333,9 @@ func cmd() *cobra.Command {
 	c.Flags().StringVar(&rootCAs, "issuer-root-ca", "", "Root certificate authorities for the issuer. Defaults to host certs.")
 	c.Flags().BoolVar(&a.debug, "debug", false, "Print all request and responses from the OpenID Connect issuer.")
 	c.Flags().StringVar(&a.kubeconfig, "kubeconfig", "", "Kubeconfig file to configure.")
-	c.Flags().StringSliceVar(&clusterNames, "cluster", []string{}, "Cluster(s) to access to, e.g. batch, saas, and main etc.")
+	c.Flags().StringSliceVar(&clusterNames, "cluster", []string{}, "Functionality of cluster to access to, e.g. batch, saas, and main etc.")
 	c.Flags().StringVar(&a.env, "env", "stg", "Enviroment where authentication system is going to be run against. Choose from stg and prod.")
-	c.Flags().StringVar(&a.profile, "profile", "stg", "Profile of AWS credentials to load.")
+	c.Flags().StringVar(&a.profile, "profile", "staging", "Profile of AWS credentials to load.")
 	c.Flags().StringVar(&a.store, "store", "", "Storage of the configuration file. In S3, it's the bucket name.")
 	c.Flags().StringVar(&a.key, "key", "", "Key of the configuration file. In S3, it's the object key.")
 	return &c
