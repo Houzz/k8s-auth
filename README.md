@@ -35,8 +35,9 @@ This project is customized based on [k8s-auth-example](https://github.com/pusher
 ## Usage
 
 ```
-kube-auth --env <stg|prod> --cluster <batch|saas|main|mgmt|test> 
+kube-auth --env <stg|prod> --cluster <batch|saas|main|mgmt|test|all> 
 ```
+The app is going to open a webpage on the browser jumping to Google Authentication. Use the company email to log in, you are all set when the success message shows up. By default, the path to kube config is `~/.kube/config`.
 
 Here are some common scenarios:
 
