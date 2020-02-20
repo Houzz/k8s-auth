@@ -66,17 +66,6 @@ kube-auth --env stg --cluster batch.
 
 > :information_source: **Tips :** Run `kube-auth --help` for usage information of the app if you are not sure how to use the app.
 
-## Building
-The application is written in Go using [`dep`](https://github.com/golang/dep)
-as the package manager. The following will get you your first build:
-
-```
-go get git@github.com/Houzz/k8s-auth
-cd $GOPATH/src/github.com/Houzz/k8s-auth
-dep ensure
-go build -o k8s-auth
-```
-
 ## Communication
 
 * Found a bug? Please open an issue.
