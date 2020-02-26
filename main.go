@@ -139,15 +139,15 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func cmd() *cobra.Command {
 	var (
-		a            app
-		listen       string
-		tlsCert      string
-		tlsKey       string
-		rootCAs      string
-		clusterNames []string
+		a       app
+		listen  string
+		tlsCert string
+		tlsKey  string
+		rootCAs string
+		fxnls   []string
 	)
 	c := cobra.Command{
-		Use:       "k8s-auth",
+		Use:       "kube-auth",
 		Short:     "Authenticates users against OIDC and writes the required kubeconfig.",
 		Long:      "",
 		ValidArgs: []string{"some", "acceptable", "values"},
@@ -200,24 +200,24 @@ func cmd() *cobra.Command {
 			a.contexts = make(map[string]*k8s_api.Context)
 
 			needAll := false
-			for _, name := range clusterNames {
-				if strings.ToLower(name) == "all" {
+			for _, fxnl := range fxnls {
+				if strings.ToLower(fxnl) == "all" {
 					needAll = true
 					break
 				}
 			}
 
 			if needAll {
-				clusterNames = []string{}
+				fxnls = []string{}
 				for name := range memo {
-					clusterNames = append(clusterNames, name)
+					fxnls = append(fxnls, name)
 				}
 			}
 
-			for _, cn := range clusterNames {
-				name := strings.ToLower(cn)
-				if conf, ok := memo[name]; ok {
-					finalClusterName := a.env + "-" + name
+			for _, _fxnl := range fxnls {
+				fxnl := strings.ToLower(_fxnl)
+				if conf, ok := memo[fxnl]; ok {
+					clusterName := a.env + "-" + fxnl
 					cluster := k8s_api.NewCluster()
 					cluster.Server = conf.Server
 					if cert, err := base64.StdEncoding.DecodeString(conf.Cert); err != nil {
@@ -225,12 +225,12 @@ func cmd() *cobra.Command {
 					} else {
 						cluster.CertificateAuthorityData = cert
 					}
-					a.clusters[finalClusterName] = cluster
+					a.clusters[clusterName] = cluster
 					context := k8s_api.NewContext()
-					context.Cluster = finalClusterName
-					a.contexts[finalClusterName] = context
+					context.Cluster = clusterName
+					a.contexts[clusterName] = context
 				} else {
-					return fmt.Errorf("Found no cluster %s in config file", name)
+					return fmt.Errorf("Found no cluster %s-%s in config file", a.env, fxnl)
 				}
 			}
 
@@ -325,15 +325,15 @@ func cmd() *cobra.Command {
 	// Configurable variables
 	c.Flags().StringVar(&a.ClientID, "client-id", "", "OAuth2 client ID of this application.")
 	c.Flags().StringVar(&a.ClientSecret, "client-secret", "", "OAuth2 client secret of this application.")
-	c.Flags().StringVar(&a.redirectURI, "redirect-uri", "http://127.0.0.1:5555/callback", "Callback URL for OAuth2 responses.")
+	c.Flags().StringVar(&a.redirectURI, "redirect-uri", "http://127.0.0.1:15555/callback", "Callback URL for OAuth2 responses. If port 15555 is occupied, try alternatives 16555, 17555, 18555, 19555.")
 	c.Flags().StringVar(&a.Issuer, "issuer", "", "URL of the OpenID Connect issuer.")
-	c.Flags().StringVar(&listen, "listen", "http://127.0.0.1:5555", "HTTP(S) address to listen at.")
+	c.Flags().StringVar(&listen, "listen", "http://127.0.0.1:15555", "HTTP(S) address to listen at. If port 15555 is occupied, try alternatives 16555, 17555, 18555, 19555.")
 	c.Flags().StringVar(&tlsCert, "tls-cert", "", "X509 cert file to present when serving HTTPS.")
 	c.Flags().StringVar(&tlsKey, "tls-key", "", "Private key for the HTTPS cert.")
 	c.Flags().StringVar(&rootCAs, "issuer-root-ca", "", "Root certificate authorities for the issuer. Defaults to host certs.")
 	c.Flags().BoolVar(&a.debug, "debug", false, "Print all request and responses from the OpenID Connect issuer.")
 	c.Flags().StringVar(&a.kubeconfig, "kubeconfig", "", "Kubeconfig file to configure.")
-	c.Flags().StringSliceVar(&clusterNames, "cluster", []string{}, "Functionality of cluster to access to, e.g. batch, saas, and main etc.")
+	c.Flags().StringSliceVar(&fxnls, "fxnl", []string{}, "Functionality of cluster to access to, e.g. batch, saas, main, mgmt or test etc.")
 	c.Flags().StringVar(&a.env, "env", "stg", "Enviroment where authentication system is going to be run against. Choose from stg and prod.")
 	c.Flags().StringVar(&a.profile, "profile", "staging", "Profile of AWS credentials to load.")
 	c.Flags().StringVar(&a.store, "store", "", "Storage of the configuration file. In S3, it's the bucket name.")
