@@ -23,6 +23,8 @@ This project is customized based on [k8s-auth-example](https://github.com/pusher
 
 ## Usage
 
+:warning: Run the below command in a clean shell, i.e. no prompt about k8s cluster and namespace introduced by kubie should appear.     
+
 ```
 kube-auth --env <stg|prod> --fxnl <batch|saas|main|mgmt|test|all> 
 ```
