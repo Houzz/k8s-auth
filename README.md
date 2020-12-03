@@ -67,10 +67,10 @@ kube-auth --env stg --fxnl batch.
 
 > :information_source: **Tips :** Run `kube-auth --help` for usage information of the app if you are not sure how to use the app.
 
-## Issues
-1. When I run `kube-auth --env stg --fxnl main`, my command line prints `Error: Failed to download from s3://houzz-conf-staging/credential/k8s/auth/kube-auth.json`.
-Ans:
-Please ensure that both your ~/.aws/config and ~/.aws/credentials had the information set under the [staging] profile.
+## Questions
+Q1. When I run `kube-auth --env stg --fxnl main`, my command line prints `Error: Failed to download from s3://houzz-conf-staging/credential/k8s/auth/kube-auth.json`. How do I solve this?
+
+Ans: Please ensure that both your ~/.aws/config and ~/.aws/credentials had the information set under the [staging] profile.
 e.g. a credentials file with
 ```
 [staging]
