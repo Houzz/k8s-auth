@@ -77,6 +77,7 @@ e.g. a credentials file with
 aws_access_key_id=*******
 aws_secret_access_key=*******
 ```
+For production auth, you’ll need the info under a [production] profile in the config.
 
 ## Communication
 
