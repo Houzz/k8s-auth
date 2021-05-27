@@ -78,7 +78,7 @@ aws_access_key_id=*******
 aws_secret_access_key=*******
 ```
 
-If your credentials are correct, check from the [AWS webconsole](https://aws.amazon.com/console/) that you can access the s3://houzz-conf-staging bucket. 
+If your credentials are correct, check from the [AWS webconsole](https://aws.amazon.com/console/) that you can access the `s3://houzz-conf-staging` bucket. 
 
 **Note:** accounts in the developers group are prevented from accessing this bucket. Please consult with your friendly infrastructure team if you need access.
 
